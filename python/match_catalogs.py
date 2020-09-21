@@ -69,11 +69,7 @@ from join_catalogs import make_new_cats, join_cats
 import time
 start_time = time.time()
 
-if homedir.find('Users') > -1:
-    # running on macbook
-    tabledir = homedir+'/github/APPSS/tables/'
-else:
-    tabledir = homedir+'/research/APPSS/tables/'
+tabledir = homedir+'/github/a100sdss/tables/'
 
 H0 = 70. # km/s/Mpc
 
@@ -300,6 +296,7 @@ class a100(phot_functions,wise_functions):
         INPUT:
         - a100_catalog = csv version of a100 catalog
         - sdss_catalog = csv version of Martha's sdss catalog that is line-matched to A100
+        - sdss_catalog2 = different file from Martha that contains the column ipcode
 
         '''
         # read in a100 catalog
@@ -313,11 +310,12 @@ class a100(phot_functions,wise_functions):
         
         # add column ipcode from a100.SDSSparms.191001.csv
         # other columns that should be included
-        a1002 = ascii.read(sdss_catalog2,format='csv')
-        a1002 = Table([a1002['AGC'],a1002['icode'],a1002['pcode'],a1002['ipcode'],a1002['photoID'],a1002['spectID'],a1002['sdss_z']])
-        # match these columns to the a100sdss table
-        self.a100sdss = join(self.a100sdss,a1002,keys='AGC')
-        print('number of rows in a100 table AFTER adding other sdss cols like ipcode = ',len(self.a100sdss))
+        if sdss_catalog2 is not None:
+            a1002 = ascii.read(sdss_catalog2,format='csv')
+            a1002 = Table([a1002['AGC'],a1002['icode'],a1002['pcode'],a1002['ipcode'],a1002['photoID'],a1002['spectID'],a1002['sdss_z']])
+            # match these columns to the a100sdss table
+            self.a100sdss = join(self.a100sdss,a1002,keys='AGC')
+            print('number of rows in a100 table AFTER adding other sdss cols like ipcode = ',len(self.a100sdss))
         
         # now calculate quantities that we use in our paper
         self.ref_column = 'ra'
@@ -379,6 +377,8 @@ class gswlc(phot_functions):
         '''
         INPUT:
         - gswlc-A2-sdssphot.fits (GSWLC-A2 file, with SDSS phot that Adriana downloaded attached)
+        - updated to use sdss matching by sdss id and cut catalog at vr < 20k
+        - gswlc-A2-sdssphot.v2.vmax20k.fits
 
         OUTPUT:
         - gswlc-A2-sdssphot-corrected.fits - input file with columns attached for
@@ -432,18 +432,13 @@ class gswlc(phot_functions):
 
         self.define_photflag()
         self.taylor_mstar()
-        self.write_a100sdss()
+        self.write_gswlc_corrected()
         
-    def write_a100sdss(self):
+    def write_gswlc_corrected(self):
         # write full catalog
         
         self.a100sdss.write(tabledir+'/gswlc-A2-sdssphot-corrected.fits',format='fits',overwrite=True)
 
-    def match2zoo(self):
-        zoo = fits.getdata('/Users/rfinn/research/GalaxyZoo/GalaxyZoo1_DR_table2.fits')
-        # nothing here yet
-        # galaxy zoo SDSS objIDs don't match what we have in a100 - like zero matches
-        # not sure why
         
 class match2a100sdss():
     def __init__(self, a100sdss=None):
@@ -548,17 +543,21 @@ class match2a100sdss():
         # assume ABSMAG is in AB mag, with ZP = 3631 Jy
         # *** need to correct ABSMAG to H0=70  ****
         # NSA magnitudes are already corrected for galactic extinction
+        
         flux_10pc = 3631.*10**(-1.*(self.a100sdsswisensa['SERSIC_ABSMAG'][:,1])/2.5)*u.Jy
         dist = 10.*u.pc
-        self.nuLnu_NUV = flux_10pc*4*np.pi*dist**2*freq_NUV
+        # nuv luminosity from NSA absolute mag
+        # note - this is for H0=100
+        self.nuLnu_NUV_NSA = flux_10pc*4*np.pi*dist**2*freq_NUV
+
         # calculate using A100 distances
         nuv_mag = np.zeros(len(self.a100sdsswisensa),'f')
         fnu_nuv = np.zeros(len(self.a100sdsswisensa),'f')*u.Jy
         flagNUV = self.a100sdsswisensa['SERSIC_NMGY'][:,1] > 0.
 
-        nuv_mag[flagNUV] = 22.5 - np.log10(self.a100sdsswisensa['SERSIC_NMGY'][:,1][flagNUV])
-        fnu_nuv[flagNUV] = 3631*10**(-1*nuv_mag[flagNUV]/2.5)*u.Jy
-        self.nuLnu_NUV = fnu_nuv*4*np.pi*(distance*u.Mpc)**2*freq_NUV
+        nuv_mag[flagNUV] = 22.5 - 2.5*np.log10(self.a100sdsswisensa['SERSIC_NMGY'][:,1][flagNUV])
+        fnu_nuv[flagNUV] = 3631*10**(-1*nuv_mag[flagNUV]/2.5)*u.Jy 
+        self.nuLnu_NUV = fnu_nuv*4*np.pi*(distance*u.Mpc)**2*freq_NUV       
 
 
         
@@ -582,13 +581,16 @@ class match2a100sdss():
         # correct NUV luminosity by IR flux
         myunit = self.nuLnu_NUV.unit
         self.nuLnu_NUV_cor = np.zeros(len(self.nuLnu_NUV))*myunit
+        self.nuLnu_NUV_cor_NSA = np.zeros(len(self.nuLnu_NUV))*myunit        
         #self.nuLnu_NUV_cor = self.nuLnu_NUV
 
         # don't need these two lines b/c I set nuLnu22 = 0 if w4_mag = 0
         #self.nuLnu_NUV_cor[flag] = self.nuLnu_NUV[flag] + 2.26*self.nuLnu22_ZDIST[flag]
         #self.nuLnu_NUV_cor[~flag] = self.nuLnu_NUV[~flag]
-        flag = flag22 & flagNUV
+        flag =  flag22 & flagNUV
+
         self.nuLnu_NUV_cor[flag] = self.nuLnu_NUV[flag] + 2.26*self.nuLnu22_ZDIST[flag]
+        self.nuLnu_NUV_cor_NSA[flag] = self.nuLnu_NUV_NSA[flag] + 2.26*self.nuLnu22_ZDIST[flag]        
         # need relation for calculating SFR from UV only
         #
         # eqn 12
@@ -600,16 +602,24 @@ class match2a100sdss():
         #self.logSFR_NUV_KE = np.log10(self.nuLnu_NUV.value)+np.log10(9.52141e13) - 43.17
         #self.logSFR_NUVIR_KE = np.log10(self.nuLnu_NUV_cor.value)+np.log10(9.52141e13) - 43.17
         self.logSFR_NUV_KE = -99*np.ones(len(self.nuLnu_NUV))
-        self.logSFR_NUVIR_KE = -99*np.ones(len(self.nuLnu_NUV))        
+        self.logSFR_NUVIR_KE = -99*np.ones(len(self.nuLnu_NUV))
+        # storing values calculated using NSA ABSMAG
+        self.logSFR_NUV_KE_NSA = -99*np.ones(len(self.nuLnu_NUV))
+        self.logSFR_NUVIR_KE_NSA = -99*np.ones(len(self.nuLnu_NUV))        
         
         self.logSFR_NUV_KE[flagNUV] = np.log10(self.nuLnu_NUV.cgs.value[flagNUV]) - 43.17
         self.logSFR_NUVIR_KE[flag] = np.log10(self.nuLnu_NUV_cor.cgs.value[flag]) - 43.17
+        self.logSFR_NUV_KE_NSA[flagNUV] = np.log10(self.nuLnu_NUV.cgs.value[flagNUV]) - 43.17
+        self.logSFR_NUVIR_KE_NSA[flag] = np.log10(self.nuLnu_NUV_cor.cgs.value[flag]) - 43.17
 
         # write columns out to table
         c0 = MaskedColumn(self.nuLnu_NUV,name='nuLnu_NUV')        
         c1 = MaskedColumn(self.logSFR_NUV_KE,name='logSFR_NUV_KE')
         c2 = MaskedColumn(self.logSFR_NUVIR_KE,name='logSFR_NUVIR_KE')        
-        self.a100sdsswisensa.add_columns([c0,c1,c2])
+        c3 = MaskedColumn(self.nuLnu_NUV_NSA,name='nuLnu_NUV_NSA')        
+        c4 = MaskedColumn(self.logSFR_NUV_KE_NSA,name='logSFR_NUV_KE_NSA')
+        c5 = MaskedColumn(self.logSFR_NUVIR_KE_NSA,name='logSFR_NUVIR_KE_NSA')        
+        self.a100sdsswisensa.add_columns([c0,c1,c2,c3,c4,c5])
         self.a100sdsswisensa.write(tabledir+'/a100-sdss-wise-nsa.fits',overwrite=True)
 
     def match_gswlc(self,gswcat):
@@ -875,22 +885,24 @@ class matchfulla100():
         freq_NUV = c.c/wavelength_NUV
         
         # convert NSA NUV abs mag to nuLnu_NUV
-        #flux_10pc = 10.**((22.5-self.s.ABSMAG[:,1])/2.5)
+        #flux_10pc = 10.**((22.5-self.nsa.ABSMAG[:,1])/2.5)
         # assume ABSMAG is in AB mag, with ZP = 3631 Jy
         # NSA magnitudes are already corrected for galactic extinction
         #flux_10pc = 3631.*10**(-1.*(self.a100sdsswisensa['SERSIC_ABSMAG'][:,1])/2.5)*u.Jy
+        #self.nuLnu_NUV_NSA = flux_10pc*4*np.pi*dist**2*freq_NUV
+        
         flagNUV = self.a100sdsswisensa['SERSIC_NMGY'][:,1] > 0.1
         # adjust Hubble constant from 100 to 70
         flux_10pc = 3631.*10**(-1.*(self.a100sdsswisensa['SERSIC_ABSMAG'][:,1])/2.5)*u.Jy 
         dist = 10.*u.pc
-        #self.nuLnu_NUV = flux_10pc*4*np.pi*dist**2*freq_NUV
+        self.nuLnu_NUV_NSA = flux_10pc*4*np.pi*dist**2*freq_NUV
         # calculate using A100 distances
-        nuv_mag = 22.5 - np.log10(self.a100sdsswisensa['SERSIC_NMGY'][:,1])
+        # and NSA apparent magnitudes
+        nuv_mag = 22.5 - 2.5*np.log10(self.a100sdsswisensa['SERSIC_NMGY'][:,1])
         fnu_nuv = 3631*10**(-1*nuv_mag/2.5)*u.Jy
 
         self.nuLnu_NUV = fnu_nuv*4*np.pi*(distance*u.Mpc)**2*freq_NUV
 
-        
         # GET IR VALUES
         wavelength_22 = 22*u.micron
         freq_22 = c.c/wavelength_22
@@ -910,11 +922,14 @@ class matchfulla100():
         # correct NUV luminosity by IR flux
         myunit = self.nuLnu_NUV.unit
         self.nuLnu_NUV_cor = -99*np.ones(len(self.nuLnu_NUV))*myunit
+        self.nuLnu_NUV_cor_NSA = -99*np.ones(len(self.nuLnu_NUV_NSA))*myunit        
         flag22 = self.a100sdsswisensa['w4_mag'] > 0.
         #self.nuLnu_NUV_cor = self.nuLnu_NUV
-        flag = flag22 & flagNUV        
+        flag =  flag22 & flagNUV
+
         ### adjust nuv luminosity for galaxies with a 22 um detection
         self.nuLnu_NUV_cor[flag] = self.nuLnu_NUV[flag] + 2.26*self.nuLnu22_ZDIST[flag]
+        self.nuLnu_NUV_cor_NSA[flag] = self.nuLnu_NUV_NSA[flag] + 2.26*self.nuLnu22_ZDIST[flag]        
         #self.nuLnu_NUV_cor[~flag] = self.nuLnu_NUV[~flag]
 
         # need relation for calculating SFR from UV only
@@ -930,10 +945,16 @@ class matchfulla100():
         #self.logSFR_NUVIR_KE = np.log10(self.nuLnu_NUV_cor.value)+np.log10(9.52141e13) - 43.17
 
         self.logSFR_NUV_KE = -99*np.ones(len(self.nuLnu_NUV))
-        self.logSFR_NUVIR_KE = -99*np.ones(len(self.nuLnu_NUV))        
+        self.logSFR_NUV_KE_NSA = -99*np.ones(len(self.nuLnu_NUV))        
+        self.logSFR_NUVIR_KE = -99*np.ones(len(self.nuLnu_NUV))
+        self.logSFR_NUVIR_KE_NSA = -99*np.ones(len(self.nuLnu_NUV))                
 
         self.logSFR_NUV_KE[flagNUV] = np.log10(self.nuLnu_NUV.cgs.value[flagNUV]) - 43.17
         self.logSFR_NUVIR_KE[flag] = np.log10(self.nuLnu_NUV_cor.cgs.value[flag]) - 43.17
+
+        # calculate for NUV calculated from NSA abs mag
+        self.logSFR_NUV_KE_NSA[flagNUV] = np.log10(self.nuLnu_NUV_NSA.cgs.value[flagNUV]) - 43.17
+        self.logSFR_NUVIR_KE_NSA[flag] = np.log10(self.nuLnu_NUV_cor_NSA.cgs.value[flag]) - 43.17
         
         #self.logSFR_NUV_KE = np.log10(self.nuLnu_NUV.cgs.value) - 43.17
         #self.logSFR_NUVIR_KE = np.log10(self.nuLnu_NUV_cor.cgs.value) - 43.17
@@ -944,7 +965,10 @@ class matchfulla100():
         c2 = MaskedColumn(self.logSFR_NUVIR_KE,name='logSFR_NUVIR_KE')
         c3 = MaskedColumn(flagNUV,name='flagNUV')
         c4 = MaskedColumn(flag22,name='flag22')                        
-        self.a100sdsswisensa.add_columns([c0,c1,c2,c3,c4])
+        c5 = MaskedColumn(self.nuLnu_NUV_NSA,name='nuLnu_NUV_NSA')        
+        c6 = MaskedColumn(self.logSFR_NUV_KE_NSA,name='logSFR_NUV_KE_NSA')
+        c7 = MaskedColumn(self.logSFR_NUVIR_KE_NSA,name='logSFR_NUVIR_KE_NSA')
+        self.a100sdsswisensa.add_columns([c0,c1,c2,c3,c4,c5,c6,c7])
     def match_gswlc(self,gswcat):
         self.a100sdsswisensa = fits.getdata(tabledir+'/full-a100-sdss-wise-nsa.fits')
         a100 = Table(self.a100sdsswisensa)
@@ -983,8 +1007,8 @@ class matchfulla100():
         print('number in GSWLC but not in A100 = ',sum(~a100_matchflag & gsw_matchflag))
         # write out temp files
         #print('writing joined tables in two pieces ')
-        a1002[a100_matchflag].write(tabledir+'/a100-sdss-wise-nsa-gswlcA2-left.fits',format='fits',overwrite=True)
-        gsw2[a100_matchflag].write(tabledir+'/a100-sdss-wise-nsa-gswlcA2-right.fits',format='fits',overwrite=True)
+        #a1002[a100_matchflag].write(tabledir+'/a100-sdss-wise-nsa-gswlcA2-left.fits',format='fits',overwrite=True)
+        #gsw2[a100_matchflag].write(tabledir+'/a100-sdss-wise-nsa-gswlcA2-right.fits',format='fits',overwrite=True)
         print('Trying to join a1002 and gsw2')
         # join a100-sdss and nsa into one table
         joined_table = hstack([a1002[a100_matchflag],gsw2[a100_matchflag]])
@@ -995,17 +1019,25 @@ class matchfulla100():
         joined_table.add_columns([c2])
         
         # write out joined a100-sdss-gswlc catalog
-        joined_table.write(tabledir+'/full-a100-sdss-wise-nsa-gswlcA2.fits',format='fits',overwrite=True)
+        joined_table.write(tabledir+'/a100-sdss-wise-nsa-gswlcA2.fits',format='fits',overwrite=True)
         
 
 def make_a100sdss():
     a100_file = tabledir+'/a100.HIparms.191001.csv'
+    
     # read in sdss phot, line-matched catalogs
-    sdss_file2 = tabledir+'/a100.SDSSparms.191001.csv'
     sdss_file = tabledir+'/a100.code12.SDSSvalues200409.csv'
-    ## UPDATING TO READ IN COLUMN IPCODE FROM SDSSPARMS SO THAT WE CAN
+    # updating after referee report, Sep 2020
+    # we found a few more sources that were matched to sdss
+    # apparently sdss query times out and returns blanks,
+    # but these actually have sdss matches
+    sdss_file = tabledir+'/a100.SDSSparms.200825.csv'
+
+    ## SENDING IN ANOTHER FILE TO THE A100 CLASS - 
+    ## UPDATING TO READ IN COLUMN IPCODE FROM SDSSPARMS SO THAT WE CAN    
     ## UPDATE THE SDSS FLAG TO INDICATE GALAXIES THAT ARE NOT IN THE SDSS FOOTPRINT
-    a = a100(a100_file,sdss_file,sdss_catalog2=sdss_file2)
+    #sdss_file2 = tabledir+'/a100.SDSSparms.191001.csv'    
+    a = a100(a100_file,sdss_file)#,sdss_catalog2=sdss_file2)
 
 
 if __name__ == '__main__':
@@ -1023,10 +1055,16 @@ if __name__ == '__main__':
     if args.overlap:
         # this also creates WISE catalog
         make_a100sdss()
-        #gswlc_file = tabledir+'/gswlc-A2-sdssphot.fits'
 
+
+        #########################################################
+        ## ADD TAYLOR STELLAR MASS AND PHOTFLAG TO GSWLC CATALOG
+        ## calculate internal extinction, colors, and taylor stellar mass
+        #########################################################
+        ##
         ### UDPATING JULY 6, 2020 TO USE CATALOG WITH
         ### SDSS PHOT MATCHED BY OBJID INSTEAD OF BY RA, DEC
+        ##########################################################
         #gswlc_file = tabledir+'/gswlc-A2-sdssphot.v2.fits'
         # using version with vmax < 20,000
         gswlc_file = tabledir+'/gswlc-A2-sdssphot.v2.vmax20k.fits'        
@@ -1052,10 +1090,7 @@ if __name__ == '__main__':
         print('\nMATCHING TO GSWLC-A2 \n')
         print('################################')
         # match to GSWLC-A2
-
-        # calculate internal extinction, colors, and taylor stellar mass
-        
-        #gsw = tabledir+'/gswlc-A2-withheader.dat'
+        # this is the catalog with internal extinction, taylor logMstar, photflag
         gsw = tabledir+'/gswlc-A2-sdssphot-corrected.fits'
         a.match_gswlc(gsw)
         print('################################')
