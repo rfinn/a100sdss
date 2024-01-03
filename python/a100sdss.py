@@ -609,7 +609,8 @@ class matchedcats():
                   xmin=6., xmax=12, ymin=gimin,ymax=gimax,\
                   xlabel='$NSA \ \log_{10}(M_\star (M_\odot))$', ylabel='$ NSA \ (M_g - M_i)$', color2=colorblind1)
         plt.savefig('a100-nsa-color-mass-2.png')
-        plt.savefig('fig6a.pdf')        
+        plt.savefig('fig6a.pdf')
+        plt.savefig('fig6a.png')                
         return flag1
 
     def figb_nsa(self):
@@ -627,7 +628,8 @@ class matchedcats():
                   hexbinflag=False, contourflag1=True,contourflag=False,contour_bins=30,  ncontour_levels=contour_levels,\
                   color2=colorblind2,xmin=6.,xmax=12, ymin=gimin,ymax=gimax)
         plt.savefig('a100-nsa-color-mass-1.png')
-        plt.savefig('fig6b.pdf')                
+        plt.savefig('fig6b.pdf')
+        plt.savefig('fig6b.png')                        
     def figa_gswlc(self):
         # figure a is catalog specific quantities
         
@@ -652,7 +654,8 @@ class matchedcats():
                   xmin=6.,xmax=12,ymin=gimin,ymax=gimax, \
                   xlabel='$GSWLC-2 \ \log_{10}(M_\star (M_\odot))$', ylabel='$  \ (g - i)_{corrected}$', color2=colorblind1)
         plt.savefig('a100-gswlc-color-mass-2.png')
-        plt.savefig('fig8a.pdf')        
+        plt.savefig('fig8a.pdf')
+        plt.savefig('fig8a.png')                
         return flag1
     def figb_gswlc(self):
         # in both
@@ -671,7 +674,8 @@ class matchedcats():
                   hexbinflag=False, alphagray=.08, contourflag1=True,contourflag=False,contour_bins=30, ncontour_levels=contour_levels,\
                   color2=colorblind2,xmin=6.,xmax=12,ymin=gimin,ymax=gimax)
         plt.savefig('a100-gswlc-color-mass-1.png')
-        plt.savefig('fig8b.pdf')                
+        plt.savefig('fig8b.pdf')
+        plt.savefig('fig8b.png')                        
     def figa_s4g(self):
         x = self.a100s4g.mstar
         y = self.a100s4g.bvtc
@@ -697,7 +701,8 @@ class matchedcats():
                   xmin=6,xmax=13,ymin=gimin, ymax=gimax,nhistbin=10,alphagray=.5,\
                   xlabel='$S4G \ \log_{10}(M_\star/M_\odot)$', ylabel='$ Leda \ (B-V)$', color2=colorblind1)
         plt.savefig('a100-s4g-color-mass-1.png')
-        plt.savefig('fig7a.pdf')                
+        plt.savefig('fig7a.pdf')
+        plt.savefig('fig7a.pdf')                        
     def figb_s4g(self):
         x = self.a100s4g.logMstarTaylor
         y = self.a100s4g.gmi_corr
